@@ -1,4 +1,3 @@
-
 const { createClient } = require('@supabase/supabase-js');
 
 // Initialize the Supabase client

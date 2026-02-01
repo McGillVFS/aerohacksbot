@@ -1,4 +1,3 @@
-
 const { SlashCommandBuilder } = require('discord.js');
 const { findRegistrationByDiscordId, findRegistrationByEmail, linkDiscordId } = require('../utils/supabase');
 const { getOrCreateRole } = require('../utils/discordHelpers');
