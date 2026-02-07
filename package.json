@@ -2,7 +2,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "register:guild": "node scripts/register-guild-command.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.3",

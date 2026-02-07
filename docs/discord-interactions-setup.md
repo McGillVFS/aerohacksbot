@@ -30,6 +30,19 @@ For global commands, replace the URL with:
 
 `PUT https://discord.com/api/v10/applications/{APP_ID}/commands`
 
+### Fast path for testing (guild-specific)
+
+This repo includes a script that registers the command directly to a guild:
+
+1. Set env vars:
+   - `DISCORD_APP_ID`
+   - `DISCORD_BOT_TOKEN`
+   - optional `DISCORD_GUILD_ID` (defaults to `1440784109034274838`)
+2. Run:
+   `npm run register:guild`
+
+Guild commands update almost immediately, unlike global commands.
+
 ## 2) Configure Interaction Endpoint URL
 
 In Discord Developer Portal:
