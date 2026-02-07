@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import nacl from "tweetnacl";
 import { createClient } from "@supabase/supabase-js";
+import { assignRolesFromRegistration, editOriginalInteractionResponse } from "../../../lib/discord/assignRolesFromRegistration";
 
 export const config = {
   api: {
@@ -49,13 +50,18 @@ type DiscordUser = {
 };
 
 type Interaction = {
+  id: string;
+  token: string;
+  application_id: string;
   type: number;
+  guild_id?: string;
   data?: {
     name?: string;
     options?: Array<{ name: string; type: number; value?: string }>;
   };
   member?: {
     user?: DiscordUser;
+    roles?: string[];
   };
   user?: DiscordUser;
 };
@@ -65,6 +71,13 @@ type Registration = {
   first_name: string;
   last_name: string;
   discord_user_id: string | null;
+  fields_of_study: string[] | null;
+  interests: string[] | null;
+  level_of_study: string | null;
+  school: string | null;
+  school_other: string | null;
+  team_mode: string | null;
+  team_name: string | null;
 };
 
 function interactionResponse(content: string) {
@@ -109,10 +122,22 @@ function getEmailOption(interaction: Interaction): string | null {
   return value.trim().toLowerCase();
 }
 
+function interactionDeferredResponse() {
+  return {
+    type: 5,
+    data: {
+      flags: 64,
+    },
+  };
+}
+
+const REGISTRATION_SELECT =
+  "email, first_name, last_name, discord_user_id, fields_of_study, interests, level_of_study, school, school_other, team_mode, team_name";
+
 async function findByDiscordUserId(discordUserId: string): Promise<Registration | null> {
   const { data, error } = await supabase
     .from("registrations")
-    .select("email, first_name, last_name, discord_user_id")
+    .select(REGISTRATION_SELECT)
     .eq("discord_user_id", discordUserId)
     .maybeSingle();
 
@@ -126,7 +151,7 @@ async function findByDiscordUserId(discordUserId: string): Promise<Registration 
 async function findByEmailCaseInsensitive(normalizedEmail: string): Promise<Registration | null> {
   const { data, error } = await supabase
     .from("registrations")
-    .select("email, first_name, last_name, discord_user_id")
+    .select(REGISTRATION_SELECT)
     .ilike("email", normalizedEmail)
     .limit(2);
 
@@ -159,6 +184,157 @@ async function discordLinkedElsewhere(discordUserId: string, email: string): Pro
   }
 
   return Boolean(data);
+}
+
+type VerifyResult =
+  | { ok: true; registration: Registration }
+  | { ok: false; message: string };
+
+async function verifyRegistration(discordUser: DiscordUser, interaction: Interaction): Promise<VerifyResult> {
+  const providedEmail = getEmailOption(interaction);
+
+  if (!providedEmail) {
+    const existing = await findByDiscordUserId(discordUser.id);
+    if (!existing) {
+      return {
+        ok: false,
+        message:
+          "I couldn't automatically verify your Discord account. Please run /verify email:<your registration email>.",
+      };
+    }
+
+    return { ok: true, registration: existing };
+  }
+
+  const registration = await findByEmailCaseInsensitive(providedEmail);
+  if (!registration) {
+    return {
+      ok: false,
+      message:
+        "❌ Could not verify registration for that email. If you already registered, contact staff. Otherwise register at mcgillaerohacks.com.",
+    };
+  }
+
+  const linkedElsewhere = await discordLinkedElsewhere(discordUser.id, registration.email);
+  if (linkedElsewhere) {
+    return {
+      ok: false,
+      message: "❌ This Discord account is already linked to a registration. Contact staff if this is a mistake.",
+    };
+  }
+
+  if (registration.discord_user_id && registration.discord_user_id !== discordUser.id) {
+    return {
+      ok: false,
+      message: "❌ That registration is already linked to a different Discord account. Contact staff for help.",
+    };
+  }
+
+  const { data: updatedRegistration, error: updateError } = await supabase
+    .from("registrations")
+    .update({
+      discord_user_id: discordUser.id,
+      discord_username: discordUser.username ?? null,
+      discord_verified_at: new Date().toISOString(),
+    })
+    .eq("email", registration.email)
+    .select(REGISTRATION_SELECT)
+    .single();
+
+  if (updateError) {
+    if ((updateError as { code?: string }).code === "23505") {
+      return {
+        ok: false,
+        message: "❌ This Discord account is already linked to a registration. Contact staff if this is a mistake.",
+      };
+    }
+
+    throw updateError;
+  }
+
+  return { ok: true, registration: updatedRegistration as Registration };
+}
+
+function buildVerificationSuccessMessage(
+  registration: Registration,
+  roleResult: Awaited<ReturnType<typeof assignRolesFromRegistration>> | null,
+  guildId: string | undefined
+): string {
+  const lines = [`✅ Verified: ${registration.first_name} ${registration.last_name}`];
+
+  if (!guildId) {
+    lines.push("You're verified, but role assignment only works in a server channel.");
+    return lines.join("\n");
+  }
+
+  lines.push("We've assigned roles based on your program, interests, school, and team status.");
+
+  if (!roleResult) {
+    return lines.join("\n");
+  }
+
+  if (roleResult.assignedRoleNames.length > 0) {
+    lines.push(`Assigned: ${roleResult.assignedRoleNames.join(", ")}`);
+  } else {
+    lines.push("No new roles were needed.");
+  }
+
+  if (roleResult.failedRoleNames.length > 0) {
+    lines.push("Some roles could not be assigned right now. Please contact staff if this persists.");
+  }
+
+  return lines.join("\n");
+}
+
+async function processVerifyInteraction(interaction: Interaction): Promise<void> {
+  const discordUser = getDiscordUser(interaction);
+  if (!discordUser?.id) {
+    await editOriginalInteractionResponse({
+      applicationId: interaction.application_id,
+      interactionToken: interaction.token,
+      content: "Could not read your Discord account information.",
+    });
+    return;
+  }
+
+  try {
+    const verifyResult = await verifyRegistration(discordUser, interaction);
+
+    if ("message" in verifyResult) {
+      await editOriginalInteractionResponse({
+        applicationId: interaction.application_id,
+        interactionToken: interaction.token,
+        content: verifyResult.message,
+      });
+      return;
+    }
+
+    let roleResult: Awaited<ReturnType<typeof assignRolesFromRegistration>> | null = null;
+    if (interaction.guild_id) {
+      roleResult = await assignRolesFromRegistration({
+        guildId: interaction.guild_id,
+        discordUserId: discordUser.id,
+        registration: verifyResult.registration,
+      });
+    }
+
+    await editOriginalInteractionResponse({
+      applicationId: interaction.application_id,
+      interactionToken: interaction.token,
+      content: buildVerificationSuccessMessage(verifyResult.registration, roleResult, interaction.guild_id),
+    });
+  } catch (error) {
+    console.error("verify command error", error);
+    try {
+      await editOriginalInteractionResponse({
+        applicationId: interaction.application_id,
+        interactionToken: interaction.token,
+        content: "An internal error occurred. Please try again later.",
+      });
+    } catch (followupError) {
+      console.error("Failed to send error follow-up:", followupError);
+    }
+  }
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
@@ -199,94 +375,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const discordUser = getDiscordUser(interaction);
-  if (!discordUser?.id) {
-    res.status(200).json(interactionResponse("Could not read your Discord account information."));
-    return;
-  }
-
-  try {
-    const providedEmail = getEmailOption(interaction);
-
-    if (!providedEmail) {
-      const existing = await findByDiscordUserId(discordUser.id);
-      if (existing) {
-        res.status(200).json(interactionResponse(`✅ Verified: ${existing.first_name} ${existing.last_name}`));
-        return;
-      }
-
-      res
-        .status(200)
-        .json(
-          interactionResponse(
-            "I couldn't automatically verify your Discord account. Please run /verify email:<your registration email>."
-          )
-        );
-      return;
-    }
-
-    const registration = await findByEmailCaseInsensitive(providedEmail);
-    if (!registration) {
-      res
-        .status(200)
-        .json(
-          interactionResponse(
-            "❌ Could not verify registration for that email. If you already registered, contact staff. Otherwise register at mcgillaerohacks.com."
-          )
-        );
-      return;
-    }
-
-    const linkedElsewhere = await discordLinkedElsewhere(discordUser.id, registration.email);
-    if (linkedElsewhere) {
-      res
-        .status(200)
-        .json(
-          interactionResponse(
-            "❌ This Discord account is already linked to a registration. Contact staff if this is a mistake."
-          )
-        );
-      return;
-    }
-
-    if (registration.discord_user_id && registration.discord_user_id !== discordUser.id) {
-      res
-        .status(200)
-        .json(
-          interactionResponse(
-            "❌ That registration is already linked to a different Discord account. Contact staff for help."
-          )
-        );
-      return;
-    }
-
-    const { error: updateError } = await supabase
-      .from("registrations")
-      .update({
-        discord_user_id: discordUser.id,
-        discord_username: discordUser.username ?? null,
-        discord_verified_at: new Date().toISOString(),
-      })
-      .eq("email", registration.email);
-
-    if (updateError) {
-      if ((updateError as { code?: string }).code === "23505") {
-        res
-          .status(200)
-          .json(
-            interactionResponse(
-              "❌ This Discord account is already linked to a registration. Contact staff if this is a mistake."
-            )
-          );
-        return;
-      }
-
-      throw updateError;
-    }
-
-    res.status(200).json(interactionResponse(`✅ Verified: ${registration.first_name} ${registration.last_name}`));
-  } catch (error) {
-    console.error("verify command error", error);
-    res.status(200).json(interactionResponse("An internal error occurred. Please try again later."));
-  }
+  res.status(200).json(interactionDeferredResponse());
+  setImmediate(() => {
+    void processVerifyInteraction(interaction);
+  });
 }
