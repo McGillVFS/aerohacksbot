@@ -41,18 +41,34 @@ type EditOriginalInteractionResponseInput = {
 };
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
+const DISCORD_API_TIMEOUT_MS = Number(process.env.DISCORD_API_TIMEOUT_MS ?? "7000");
+const MAX_ROLE_OPERATIONS = Number(process.env.MAX_ROLE_OPERATIONS ?? "24");
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
 const discordBotToken = DISCORD_TOKEN;
 let cachedBotUserId: string | null = null;
 
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DISCORD_API_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function discordApi<T>(path: string, init?: RequestInit): Promise<T> {
   if (!discordBotToken) {
     throw new Error("Missing required env var: DISCORD_TOKEN");
   }
 
-  const response = await fetch(`${DISCORD_API_BASE}${path}`, {
+  const response = await fetchWithTimeout(`${DISCORD_API_BASE}${path}`, {
     ...init,
     headers: {
       Authorization: `Bot ${discordBotToken}`,
@@ -202,16 +218,44 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
 
   const skippedExistingRoleNames: string[] = [];
   const skippedHierarchyRoleNames: string[] = [];
+  const failedRoleNames: string[] = [];
   const assignmentQueue: Array<{ roleName: string; roleId: string }> = [];
 
+  const missingRoleNames: string[] = [];
   for (const desiredRoleName of desiredRoleNames) {
     const roleKey = desiredRoleName.toLowerCase();
-    let role = roleByLowerName.get(roleKey);
-
+    const role = roleByLowerName.get(roleKey);
     if (!role) {
-      role = await createGuildRole(input.guildId, desiredRoleName);
-      roleByLowerName.set(roleKey, role);
-      guildRolesById.set(role.id, role);
+      missingRoleNames.push(desiredRoleName);
+    }
+  }
+
+  const roleCreationResults = await Promise.allSettled(
+    missingRoleNames.map(async (roleName) => {
+      const created = await createGuildRole(input.guildId, roleName);
+      return created;
+    })
+  );
+
+  roleCreationResults.forEach((result, index) => {
+    const roleName = missingRoleNames[index];
+    if (!roleName) return;
+
+    if (result.status === "rejected") {
+      failedRoleNames.push(roleName);
+      console.error("Failed to create role:", roleName, result.reason);
+      return;
+    }
+
+    const createdRole = result.value;
+    roleByLowerName.set(createdRole.name.toLowerCase(), createdRole);
+    guildRolesById.set(createdRole.id, createdRole);
+  });
+
+  for (const desiredRoleName of desiredRoleNames) {
+    const role = roleByLowerName.get(desiredRoleName.toLowerCase());
+    if (!role) {
+      continue;
     }
 
     if (memberRoleIds.has(role.id)) {
@@ -227,18 +271,23 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
     assignmentQueue.push({ roleName: role.name, roleId: role.id });
   }
 
+  const boundedAssignmentQueue = assignmentQueue.slice(0, Math.max(0, MAX_ROLE_OPERATIONS));
+  for (const skipped of assignmentQueue.slice(boundedAssignmentQueue.length)) {
+    failedRoleNames.push(skipped.roleName);
+    console.error("Skipping role assignment due to MAX_ROLE_OPERATIONS cap:", skipped.roleName);
+  }
+
   const assignments = await Promise.allSettled(
-    assignmentQueue.map(async ({ roleName, roleId }) => {
+    boundedAssignmentQueue.map(async ({ roleName, roleId }) => {
       await assignRoleToMember(input.guildId, input.discordUserId, roleId);
       return roleName;
     })
   );
 
   const assignedRoleNames: string[] = [];
-  const failedRoleNames: string[] = [];
 
   assignments.forEach((result, index) => {
-    const roleName = assignmentQueue[index]?.roleName;
+    const roleName = boundedAssignmentQueue[index]?.roleName;
     if (!roleName) return;
 
     if (result.status === "fulfilled") {
@@ -259,7 +308,7 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
 }
 
 export async function editOriginalInteractionResponse(input: EditOriginalInteractionResponseInput): Promise<void> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${DISCORD_API_BASE}/webhooks/${input.applicationId}/${input.interactionToken}/messages/@original`,
     {
       method: "PATCH",

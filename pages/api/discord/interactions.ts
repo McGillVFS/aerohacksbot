@@ -122,6 +122,10 @@ function getEmailOption(interaction: Interaction): string | null {
   return value.trim().toLowerCase();
 }
 
+function escapePostgresLike(value: string): string {
+  return value.replace(/[%_\\]/g, "\\$&");
+}
+
 function interactionDeferredResponse() {
   return {
     type: 5,
@@ -149,10 +153,11 @@ async function findByDiscordUserId(discordUserId: string): Promise<Registration 
 }
 
 async function findByEmailCaseInsensitive(normalizedEmail: string): Promise<Registration | null> {
+  const escapedEmail = escapePostgresLike(normalizedEmail);
   const { data, error } = await supabase
     .from("registrations")
     .select(REGISTRATION_SELECT)
-    .ilike("email", normalizedEmail)
+    .ilike("email", escapedEmail)
     .limit(2);
 
   if (error) {
