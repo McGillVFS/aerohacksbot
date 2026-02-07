@@ -36,7 +36,7 @@ This repo includes a script that registers the command directly to a guild:
 
 1. Set env vars:
    - `DISCORD_APP_ID`
-   - `DISCORD_BOT_TOKEN`
+   - `DISCORD_TOKEN`
    - optional `DISCORD_GUILD_ID` (defaults to `1440784109034274838`)
 2. Run:
    `npm run register:guild`

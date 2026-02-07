@@ -1,9 +1,9 @@
 const DISCORD_APP_ID = process.env.DISCORD_APP_ID;
-const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID || "1440784109034274838";
 
-if (!DISCORD_APP_ID || !DISCORD_BOT_TOKEN) {
-  console.error("Missing required env vars: DISCORD_APP_ID and DISCORD_BOT_TOKEN");
+if (!DISCORD_APP_ID || !DISCORD_TOKEN) {
+  console.error("Missing required env vars: DISCORD_APP_ID and DISCORD_TOKEN");
   process.exit(1);
 }
 
@@ -28,7 +28,7 @@ const url = `https://discord.com/api/v10/applications/${DISCORD_APP_ID}/guilds/$
 const response = await fetch(url, {
   method: "PUT",
   headers: {
-    Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
+    Authorization: `Bot ${DISCORD_TOKEN}`,
     "Content-Type": "application/json",
   },
   body: JSON.stringify(commands),

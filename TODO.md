@@ -15,7 +15,7 @@ The command registration script and the interaction handler rely on environment 
 
 - **Action:** Go to your Vercel project settings and ensure the following environment variables are set:
     - `DISCORD_APP_ID`: Your Discord application's ID.
-    - `DISCORD_BOT_TOKEN`: Your Discord bot's token.
+    - `DISCORD_TOKEN`: Your Discord bot's token.
     - `DISCORD_GUILD_ID`: The ID of the Discord server you want to add the command to.
     - `DISCORD_PUBLIC_KEY`: Your Discord application's public key.
     - `SUPABASE_URL`: Your Supabase project URL.
