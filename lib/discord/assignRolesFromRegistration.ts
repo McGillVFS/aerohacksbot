@@ -43,11 +43,21 @@ type EditOriginalInteractionResponseInput = {
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const DISCORD_API_TIMEOUT_MS = Number(process.env.DISCORD_API_TIMEOUT_MS ?? "7000");
 const MAX_ROLE_OPERATIONS = Number(process.env.MAX_ROLE_OPERATIONS ?? "24");
+const ENABLE_VERIFY_TIMING_LOGS = process.env.VERIFY_TIMING_LOGS !== "0";
+const DISCORD_BOT_USER_ID = process.env.DISCORD_BOT_USER_ID;
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
 const discordBotToken = DISCORD_TOKEN;
 let cachedBotUserId: string | null = null;
+
+function logVerifyTiming(step: string, durationMs: number, details?: string): void {
+  if (!ENABLE_VERIFY_TIMING_LOGS) {
+    return;
+  }
+  const suffix = details ? ` ${details}` : "";
+  console.info(`[verify-timing] ${step}: ${durationMs.toFixed(1)}ms${suffix}`);
+}
 
 async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -90,6 +100,10 @@ async function discordApi<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function getBotUserId(): Promise<string> {
+  if (DISCORD_BOT_USER_ID) {
+    return DISCORD_BOT_USER_ID;
+  }
+
   if (cachedBotUserId) {
     return cachedBotUserId;
   }
@@ -193,8 +207,10 @@ function getMemberTopRolePosition(memberRoleIds: string[], guildRolesById: Map<s
 }
 
 export async function assignRolesFromRegistration(input: AssignRolesInput): Promise<AssignRolesResult> {
+  const totalStart = performance.now();
   const desiredRoleNames = buildDesiredRoleNames(input.registration);
   if (desiredRoleNames.length === 0) {
+    logVerifyTiming("roles.total", performance.now() - totalStart, "desired_roles=0");
     return {
       assignedRoleNames: [],
       skippedExistingRoleNames: [],
@@ -203,15 +219,21 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
     };
   }
 
+  const listRolesStart = performance.now();
   const guildRoles = await listGuildRoles(input.guildId);
+  logVerifyTiming("roles.listGuildRoles", performance.now() - listRolesStart, `guild_roles=${guildRoles.length}`);
   const guildRolesById = new Map(guildRoles.map((role) => [role.id, role]));
   const roleByLowerName = new Map(guildRoles.map((role) => [role.name.toLowerCase(), role]));
 
+  const botUserStart = performance.now();
   const botUserId = await getBotUserId();
+  logVerifyTiming("roles.getBotUserId", performance.now() - botUserStart);
+  const membersStart = performance.now();
   const [member, botMember] = await Promise.all([
     getGuildMember(input.guildId, input.discordUserId),
     getGuildMember(input.guildId, botUserId),
   ]);
+  logVerifyTiming("roles.getGuildMembers", performance.now() - membersStart);
 
   const memberRoleIds = new Set(member.roles);
   const botTopRolePosition = getMemberTopRolePosition(botMember.roles, guildRolesById);
@@ -230,12 +252,14 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
     }
   }
 
+  const createRolesStart = performance.now();
   const roleCreationResults = await Promise.allSettled(
     missingRoleNames.map(async (roleName) => {
       const created = await createGuildRole(input.guildId, roleName);
       return created;
     })
   );
+  logVerifyTiming("roles.createMissingRoles", performance.now() - createRolesStart, `attempted=${missingRoleNames.length}`);
 
   roleCreationResults.forEach((result, index) => {
     const roleName = missingRoleNames[index];
@@ -277,11 +301,17 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
     console.error("Skipping role assignment due to MAX_ROLE_OPERATIONS cap:", skipped.roleName);
   }
 
+  const assignStart = performance.now();
   const assignments = await Promise.allSettled(
     boundedAssignmentQueue.map(async ({ roleName, roleId }) => {
       await assignRoleToMember(input.guildId, input.discordUserId, roleId);
       return roleName;
     })
+  );
+  logVerifyTiming(
+    "roles.assignRoleCalls",
+    performance.now() - assignStart,
+    `attempted=${boundedAssignmentQueue.length} capped_by_max=${Math.max(0, assignmentQueue.length - boundedAssignmentQueue.length)}`
   );
 
   const assignedRoleNames: string[] = [];
@@ -299,12 +329,18 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
     console.error("Failed to assign role:", roleName, result.reason);
   });
 
-  return {
+  const result = {
     assignedRoleNames,
     skippedExistingRoleNames,
     skippedHierarchyRoleNames,
     failedRoleNames,
   };
+  logVerifyTiming(
+    "roles.total",
+    performance.now() - totalStart,
+    `desired=${desiredRoleNames.length} assigned=${assignedRoleNames.length} failed=${failedRoleNames.length}`
+  );
+  return result;
 }
 
 export async function editOriginalInteractionResponse(input: EditOriginalInteractionResponseInput): Promise<void> {

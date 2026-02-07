@@ -43,6 +43,7 @@ const SUPABASE_SERVICE_ROLE_KEY_VALUE = resolveEnv(
 const supabase = createClient(SUPABASE_URL_VALUE, SUPABASE_SERVICE_ROLE_KEY_VALUE, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+const ENABLE_VERIFY_TIMING_LOGS = process.env.VERIFY_TIMING_LOGS !== "0";
 
 type DiscordUser = {
   id: string;
@@ -175,22 +176,6 @@ async function findByEmailCaseInsensitive(normalizedEmail: string): Promise<Regi
   return data[0] as Registration;
 }
 
-async function discordLinkedElsewhere(discordUserId: string, email: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("registrations")
-    .select("email")
-    .eq("discord_user_id", discordUserId)
-    .neq("email", email)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return Boolean(data);
-}
-
 type VerifyResult =
   | { ok: true; registration: Registration }
   | { ok: false; message: string };
@@ -217,14 +202,6 @@ async function verifyRegistration(discordUser: DiscordUser, interaction: Interac
       ok: false,
       message:
         "❌ Could not verify registration for that email. If you already registered, contact staff. Otherwise register at mcgillaerohacks.com.",
-    };
-  }
-
-  const linkedElsewhere = await discordLinkedElsewhere(discordUser.id, registration.email);
-  if (linkedElsewhere) {
-    return {
-      ok: false,
-      message: "❌ This Discord account is already linked to a registration. Contact staff if this is a mistake.",
     };
   }
 
@@ -260,6 +237,14 @@ async function verifyRegistration(discordUser: DiscordUser, interaction: Interac
   return { ok: true, registration: updatedRegistration as Registration };
 }
 
+function logVerifyTiming(step: string, durationMs: number, details?: string): void {
+  if (!ENABLE_VERIFY_TIMING_LOGS) {
+    return;
+  }
+  const suffix = details ? ` ${details}` : "";
+  console.info(`[verify-timing] ${step}: ${durationMs.toFixed(1)}ms${suffix}`);
+}
+
 function buildVerificationSuccessMessage(
   registration: Registration,
   roleResult: Awaited<ReturnType<typeof assignRolesFromRegistration>> | null,
@@ -292,6 +277,7 @@ function buildVerificationSuccessMessage(
 }
 
 async function processVerifyInteraction(interaction: Interaction): Promise<void> {
+  const totalStart = performance.now();
   const discordUser = getDiscordUser(interaction);
   if (!discordUser?.id) {
     await editOriginalInteractionResponse({
@@ -303,42 +289,55 @@ async function processVerifyInteraction(interaction: Interaction): Promise<void>
   }
 
   try {
+    const verifyStart = performance.now();
     const verifyResult = await verifyRegistration(discordUser, interaction);
+    logVerifyTiming("verifyRegistration", performance.now() - verifyStart, `interaction_id=${interaction.id}`);
 
     if ("message" in verifyResult) {
+      const editStart = performance.now();
       await editOriginalInteractionResponse({
         applicationId: interaction.application_id,
         interactionToken: interaction.token,
         content: verifyResult.message,
       });
+      logVerifyTiming("editOriginalInteractionResponse", performance.now() - editStart, "result=failure_message");
+      logVerifyTiming("processVerifyInteraction.total", performance.now() - totalStart, "result=failed_verification");
       return;
     }
 
     let roleResult: Awaited<ReturnType<typeof assignRolesFromRegistration>> | null = null;
     if (interaction.guild_id) {
+      const roleStart = performance.now();
       roleResult = await assignRolesFromRegistration({
         guildId: interaction.guild_id,
         discordUserId: discordUser.id,
         registration: verifyResult.registration,
       });
+      logVerifyTiming("assignRolesFromRegistration", performance.now() - roleStart, `guild_id=${interaction.guild_id}`);
     }
 
+    const editStart = performance.now();
     await editOriginalInteractionResponse({
       applicationId: interaction.application_id,
       interactionToken: interaction.token,
       content: buildVerificationSuccessMessage(verifyResult.registration, roleResult, interaction.guild_id),
     });
+    logVerifyTiming("editOriginalInteractionResponse", performance.now() - editStart, "result=success_message");
+    logVerifyTiming("processVerifyInteraction.total", performance.now() - totalStart, "result=success");
   } catch (error) {
     console.error("verify command error", error);
     try {
+      const editStart = performance.now();
       await editOriginalInteractionResponse({
         applicationId: interaction.application_id,
         interactionToken: interaction.token,
         content: "An internal error occurred. Please try again later.",
       });
+      logVerifyTiming("editOriginalInteractionResponse", performance.now() - editStart, "result=internal_error");
     } catch (followupError) {
       console.error("Failed to send error follow-up:", followupError);
     }
+    logVerifyTiming("processVerifyInteraction.total", performance.now() - totalStart, "result=exception");
   }
 }
 
