@@ -9,16 +9,37 @@ export const config = {
 };
 
 const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
+const LEGACY_PUBLIC_KEY = process.env.PUBLIC_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const LEGACY_SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_KEY;
 
-if (!DISCORD_PUBLIC_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing required env vars: DISCORD_PUBLIC_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
-  );
+function resolveEnv(primaryName: string, primaryValue: string | undefined, fallbackName?: string, fallbackValue?: string) {
+  if (primaryValue) {
+    return primaryValue;
+  }
+
+  if (fallbackValue) {
+    return fallbackValue;
+  }
+
+  if (fallbackName) {
+    throw new Error(`Missing required env var: ${primaryName} (or legacy fallback ${fallbackName})`);
+  }
+
+  throw new Error(`Missing required env var: ${primaryName}`);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+const DISCORD_PUBLIC_KEY_HEX = resolveEnv("DISCORD_PUBLIC_KEY", DISCORD_PUBLIC_KEY, "PUBLIC_KEY", LEGACY_PUBLIC_KEY);
+const SUPABASE_URL_VALUE = resolveEnv("SUPABASE_URL", SUPABASE_URL);
+const SUPABASE_SERVICE_ROLE_KEY_VALUE = resolveEnv(
+  "SUPABASE_SERVICE_ROLE_KEY",
+  SUPABASE_SERVICE_ROLE_KEY,
+  "SUPABASE_KEY",
+  LEGACY_SUPABASE_SERVICE_ROLE_KEY
+);
+
+const supabase = createClient(SUPABASE_URL_VALUE, SUPABASE_SERVICE_ROLE_KEY_VALUE, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
@@ -65,10 +86,14 @@ async function readRawBody(req: NextApiRequest): Promise<Buffer> {
 }
 
 function verifyDiscordRequest(rawBody: Buffer, signature: string, timestamp: string): boolean {
-  const message = Buffer.concat([Buffer.from(timestamp, "utf8"), rawBody]);
-  const signatureBytes = Buffer.from(signature, "hex");
-  const publicKeyBytes = Buffer.from(DISCORD_PUBLIC_KEY, "hex");
-  return nacl.sign.detached.verify(message, signatureBytes, publicKeyBytes);
+  try {
+    const message = Buffer.concat([Buffer.from(timestamp, "utf8"), rawBody]);
+    const signatureBytes = Buffer.from(signature, "hex");
+    const publicKeyBytes = Buffer.from(DISCORD_PUBLIC_KEY_HEX, "hex");
+    return nacl.sign.detached.verify(message, signatureBytes, publicKeyBytes);
+  } catch {
+    return false;
+  }
 }
 
 function getDiscordUser(interaction: Interaction): DiscordUser | null {
