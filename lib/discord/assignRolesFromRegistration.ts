@@ -43,14 +43,13 @@ type EditOriginalInteractionResponseInput = {
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const LEGACY_DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
-const discordBotToken = DISCORD_TOKEN ?? LEGACY_DISCORD_BOT_TOKEN;
+const discordBotToken = DISCORD_TOKEN;
 let cachedBotUserId: string | null = null;
 
 async function discordApi<T>(path: string, init?: RequestInit): Promise<T> {
   if (!discordBotToken) {
-    throw new Error("Missing required env var: DISCORD_TOKEN (or legacy DISCORD_BOT_TOKEN)");
+    throw new Error("Missing required env var: DISCORD_TOKEN");
   }
 
   const response = await fetch(`${DISCORD_API_BASE}${path}`, {

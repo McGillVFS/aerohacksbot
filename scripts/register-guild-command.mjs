@@ -1,9 +1,9 @@
 const DISCORD_APP_ID = process.env.DISCORD_APP_ID;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID || "1440784109034274838";
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
 
-if (!DISCORD_APP_ID || !DISCORD_TOKEN) {
-  console.error("Missing required env vars: DISCORD_APP_ID and DISCORD_TOKEN");
+if (!DISCORD_APP_ID || !DISCORD_TOKEN || !DISCORD_GUILD_ID) {
+  console.error("Missing required env vars: DISCORD_APP_ID, DISCORD_TOKEN, and DISCORD_GUILD_ID");
   process.exit(1);
 }
 
