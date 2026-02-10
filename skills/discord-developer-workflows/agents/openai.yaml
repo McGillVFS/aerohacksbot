@@ -1,0 +1,4 @@
+interface:
+  display_name: "Discord Developer Workflows"
+  short_description: "Discord app commands and interactions"
+  default_prompt: "Use this skill to implement or troubleshoot Discord app setup, slash command registration, and interactions endpoint handling using official Discord docs patterns."
