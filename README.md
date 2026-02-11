@@ -14,6 +14,8 @@ Discord interactions bot built with Next.js Pages API routes, configured for Ren
 - `npm run register:guild [-- --reason "<why>"]`
 - `npm run post:rules [-- --reason "<why>"] [-- --dry-run]`
 - `npm run rename:channels [-- --reason "<why>"] [-- --dry-run]`
+- `npm run go-live:setup -- --phase preview [-- --reason "<why>"] [-- --dry-run]`
+- `npm run go-live:setup -- --phase finalize [-- --reason "<why>"] [-- --dry-run]`
 
 These scripts automatically write an audit entry to `#mod-log` with:
 
@@ -21,6 +23,19 @@ These scripts automatically write an audit entry to `#mod-log` with:
 - why the action was taken
 - a summary of what changed
 - success/failure status
+
+### Go-live rollout phases
+
+- `preview`:
+  - posts embed previews to `#💬│staff-chat` only
+  - does not post in public channels
+  - does not change channel permissions
+- `finalize`:
+  - upserts embed posts in target onboarding channels
+  - pins required posts
+  - applies hybrid permission template last
+
+All seeded onboarding messages are embed-only payloads (`content: ""`, `embeds`, `allowed_mentions.parse: []`).
 
 ## Endpoint
 
