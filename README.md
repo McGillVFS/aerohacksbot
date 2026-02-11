@@ -1,6 +1,6 @@
 # AeroHacks Discord Verify Bot (HTTP Interactions)
 
-Serverless Discord Interactions bot built with Next.js Pages API routes for Vercel.
+Discord interactions bot built with Next.js Pages API routes, configured for Render deployment.
 
 ## Commands
 
@@ -12,6 +12,7 @@ Serverless Discord Interactions bot built with Next.js Pages API routes for Verc
 ## Endpoint
 
 - `POST /api/discord/interactions`
+- `GET /api/health`
 - Route file: `pages/api/discord/interactions.ts`
 
 ## Local setup
@@ -31,6 +32,19 @@ Serverless Discord Interactions bot built with Next.js Pages API routes for Verc
 - `DISCORD_TOKEN` (for command registration script and role assignment; legacy fallback `DISCORD_BOT_TOKEN` also supported)
 - `DISCORD_GUILD_ID` (optional; defaults to `1440784109034274838` for `npm run register:guild`)
 
+## Deploy on Render
+
+1. Create a new Render `Web Service` from this repository, or use Blueprint deploy with `render.yaml`.
+2. Use build command:
+   `npm ci && npm run build`
+3. Use start command:
+   `npm run start`
+4. Set health check path:
+   `/api/health`
+5. Set required environment variables in Render (same list as above).
+6. After deploy, set Discord `Interactions Endpoint URL` to:
+   `https://<your-render-domain>/api/discord/interactions`
+
 ## Troubleshooting
 
 - If `npm run register:guild` reports missing variables, confirm `.env.local` or `.env` contains `DISCORD_APP_ID` and `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`).
@@ -42,8 +56,9 @@ Apply:
 
 - `supabase/migrations/20260207_add_discord_verification_columns.sql`
 
-## Discord + Vercel setup
+## Discord setup
 
 See:
 
 - `docs/discord-interactions-setup.md`
+- `docs/render-deployment.md`

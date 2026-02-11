@@ -75,19 +75,28 @@ In Discord Developer Portal:
 1. Open your application.
 2. Go to `General Information`.
 3. Set `Interactions Endpoint URL` to:
-   `https://<your-vercel-domain>/api/discord/interactions`
+   `https://<your-render-domain>/api/discord/interactions`
 
 Discord validates the endpoint with a ping request (`type: 1`), and this route responds with `{"type":1}`.
 
-## 3) Configure Vercel environment variables
+## 3) Configure Render service
 
-Set these in Vercel Project Settings -> Environment Variables:
+Create a Render `Web Service` with:
 
-- `DISCORD_PUBLIC_KEY`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `DISCORD_APP_ID`
-- `DISCORD_TOKEN`
-- optional `DISCORD_GUILD_ID`
+1. Build command:
+   `npm ci && npm run build`
+2. Start command:
+   `npm run start`
+3. Health check path:
+   `/api/health`
+4. Environment variables:
+   - `DISCORD_PUBLIC_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `DISCORD_APP_ID`
+   - `DISCORD_TOKEN`
+   - optional `DISCORD_GUILD_ID`
+
+This repo includes `render.yaml` for Blueprint deploys with the same configuration.
 
 `SUPABASE_SERVICE_ROLE_KEY` must remain server-only and must never be exposed in client bundles.

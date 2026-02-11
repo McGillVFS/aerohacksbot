@@ -22,5 +22,7 @@
 
 1. Run `npm run register:guild` and confirm Discord returns `/verify`.
 2. Ensure the bot invite includes `applications.commands`.
-3. With valid Supabase credentials configured, run `/verify email:<registered_email>` in Discord.
-4. Confirm registration linking succeeds and expected roles are assigned.
+3. Deploy on Render (`npm ci && npm run build`, `npm run start`, health path `/api/health`).
+4. Point Discord `Interactions Endpoint URL` to `https://<your-render-domain>/api/discord/interactions`.
+5. With valid Supabase credentials configured, run `/verify email:<registered_email>` in Discord.
+6. Confirm registration linking succeeds and expected roles are assigned.
