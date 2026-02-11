@@ -1,0 +1,4 @@
+interface:
+  display_name: "Render Slack/Discord Agent Bot"
+  short_description: "Deploy and operate AI bots on Render"
+  default_prompt: "Use this skill to implement and productionize Slack or Discord bot integrations for AI agents on Render, including architecture choice, async processing, and operational hardening."

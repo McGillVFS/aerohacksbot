@@ -861,7 +861,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   res.status(200).json(interactionDeferredResponse());
-  void processCommandInteraction(interaction).catch((error) => {
+  try {
+    // Keep the handler alive until follow-up edit completes.
+    // Fire-and-forget processing can be dropped by some runtimes after the initial ACK.
+    await processCommandInteraction(interaction);
+  } catch (error) {
     console.error(`[interaction] command processing failed: ${commandName ?? "unknown"}`, error);
-  });
+  }
 }
