@@ -1,6 +1,6 @@
 # Discord Interactions Setup
 
-## 1) Register `/verify` command with optional `email`
+## 1) Register `/verify` command with required `email`
 
 Use Discord's commands API. For fast testing, register guild-scoped commands first.
 
@@ -19,7 +19,7 @@ Request body:
         "type": 3,
         "name": "email",
         "description": "Your registration email.",
-        "required": false
+        "required": true
       }
     ]
   }
@@ -34,12 +34,14 @@ For global commands, replace the URL with:
 
 This repo includes a script that registers the command directly to a guild:
 
-1. Set env vars:
+1. Set env vars in `.env.local`, `.env`, or your shell:
    - `DISCORD_APP_ID`
    - `DISCORD_TOKEN`
    - optional `DISCORD_GUILD_ID` (defaults to `1440784109034274838`)
 2. Run:
    `npm run register:guild`
+
+The script auto-loads `.env.local` and `.env`, so manual `source .env.local` is not required.
 
 Guild commands update almost immediately, unlike global commands.
 

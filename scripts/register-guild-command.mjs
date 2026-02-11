@@ -1,9 +1,16 @@
+import nextEnv from "@next/env";
+
+const { loadEnvConfig } = nextEnv;
+
+loadEnvConfig(process.cwd());
+
+const DEFAULT_DISCORD_GUILD_ID = "1440784109034274838";
 const DISCORD_APP_ID = process.env.DISCORD_APP_ID;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID ?? DEFAULT_DISCORD_GUILD_ID;
 
-if (!DISCORD_APP_ID || !DISCORD_TOKEN || !DISCORD_GUILD_ID) {
-  console.error("Missing required env vars: DISCORD_APP_ID, DISCORD_TOKEN, and DISCORD_GUILD_ID");
+if (!DISCORD_APP_ID || !DISCORD_TOKEN) {
+  console.error("Missing required env vars: DISCORD_APP_ID and DISCORD_TOKEN");
   process.exit(1);
 }
 
@@ -17,7 +24,7 @@ const commands = [
         type: 3,
         name: "email",
         description: "Your registration email.",
-        required: false,
+        required: true,
       },
     ],
   },

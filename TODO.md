@@ -1,35 +1,23 @@
-# Slash Command Troubleshooting
+# Discord Verify Bot Checklist
 
-Based on a review of the codebase, here are the likely reasons why the slash commands are not appearing on Discord and the recommended steps to resolve the issue.
+## Current command behavior
 
-### 1. Command Registration
+- `/verify` requires `email`.
+- Command registration script (`npm run register:guild`) auto-loads `.env.local`/`.env`.
+- `DISCORD_GUILD_ID` is optional for registration and defaults to `1440784109034274838`.
 
-The slash commands need to be registered with Discord before they can appear.
+## Required environment variables
 
-- **Action:** Run the command `npm run register:guild` in your terminal.
-- **Check for Errors:** Make sure the script runs without any errors. If it succeeds, it will print a message like `Registered 1 guild command(s) for guild <your_guild_id>: /verify`.
+- `DISCORD_PUBLIC_KEY` (or legacy `PUBLIC_KEY`)
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` (or legacy `SUPABASE_KEY`)
+- `DISCORD_APP_ID`
+- `DISCORD_TOKEN`
+- `DISCORD_GUILD_ID` (optional)
 
-### 2. Environment Variables
+## Remaining manual verification steps
 
-The command registration script and the interaction handler rely on environment variables. These need to be set correctly in your Vercel project.
-
-- **Action:** Go to your Vercel project settings and ensure the following environment variables are set:
-    - `DISCORD_APP_ID`: Your Discord application's ID.
-    - `DISCORD_TOKEN`: Your Discord bot's token.
-    - `DISCORD_GUILD_ID`: The ID of the Discord server you want to add the command to.
-    - `DISCORD_PUBLIC_KEY`: Your Discord application's public key.
-    - `SUPABASE_URL`: Your Supabase project URL.
-    - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key.
-
-### 3. Bot Permissions
-
-The bot needs the correct permissions to create slash commands.
-
-- **Action:** When you invited the bot to your server, make sure you authorized it with the `applications.commands` scope.
-- **Re-invite if necessary:** If you're not sure, you can re-invite the bot with the correct permissions. You can generate a new invite link in the Discord Developer Portal.
-
-### Potential Improvement
-
-In the current implementation, the `/verify` command has the `email` option as optional. This means a user can run the command without an email, and the bot will then ask for it. For a better user experience, you might consider making the `email` option required.
-
-To do this, you would change `required: false` to `required: true` in `scripts/register-guild-command.mjs` for the `email` option.
+1. Run `npm run register:guild` and confirm Discord returns `/verify`.
+2. Ensure the bot invite includes `applications.commands`.
+3. With valid Supabase credentials configured, run `/verify email:<registered_email>` in Discord.
+4. Confirm registration linking succeeds and expected roles are assigned.

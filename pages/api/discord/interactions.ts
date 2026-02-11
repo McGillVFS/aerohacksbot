@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import nacl from "tweetnacl";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { assignRolesFromRegistration, editOriginalInteractionResponse } from "../../../lib/discord/assignRolesFromRegistration";
 
 export const config = {
@@ -9,41 +9,92 @@ export const config = {
   },
 };
 
-const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
-const LEGACY_PUBLIC_KEY = process.env.PUBLIC_KEY;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const LEGACY_SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_KEY;
+const ENABLE_VERIFY_TIMING_LOGS = process.env.VERIFY_TIMING_LOGS !== "0";
 
-function resolveEnv(primaryName: string, primaryValue: string | undefined, fallbackName?: string, fallbackValue?: string) {
+type RuntimeConfig = {
+  discordPublicKeyHex: string;
+  supabase: SupabaseClient;
+};
+
+type EnvResolutionSpec = {
+  primaryName: string;
+  fallbackName?: string;
+};
+
+class MissingEnvError extends Error {
+  missingVars: string[];
+
+  constructor(missingVars: string[]) {
+    super(`Missing required env vars: ${missingVars.join(", ")}`);
+    this.name = "MissingEnvError";
+    this.missingVars = missingVars;
+  }
+}
+
+let runtimeConfigCache: RuntimeConfig | null = null;
+
+function readEnv(name: string): string | undefined {
+  const value = process.env[name];
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function resolveEnvValue(spec: EnvResolutionSpec): string | null {
+  const primaryValue = readEnv(spec.primaryName);
   if (primaryValue) {
     return primaryValue;
   }
 
-  if (fallbackValue) {
-    return fallbackValue;
+  if (spec.fallbackName) {
+    return readEnv(spec.fallbackName) ?? null;
   }
 
-  if (fallbackName) {
-    throw new Error(`Missing required env var: ${primaryName} (or legacy fallback ${fallbackName})`);
-  }
-
-  throw new Error(`Missing required env var: ${primaryName}`);
+  return null;
 }
 
-const DISCORD_PUBLIC_KEY_HEX = resolveEnv("DISCORD_PUBLIC_KEY", DISCORD_PUBLIC_KEY, "PUBLIC_KEY", LEGACY_PUBLIC_KEY);
-const SUPABASE_URL_VALUE = resolveEnv("SUPABASE_URL", SUPABASE_URL);
-const SUPABASE_SERVICE_ROLE_KEY_VALUE = resolveEnv(
-  "SUPABASE_SERVICE_ROLE_KEY",
-  SUPABASE_SERVICE_ROLE_KEY,
-  "SUPABASE_KEY",
-  LEGACY_SUPABASE_SERVICE_ROLE_KEY
-);
+function getRuntimeConfig(): RuntimeConfig {
+  if (runtimeConfigCache) {
+    return runtimeConfigCache;
+  }
 
-const supabase = createClient(SUPABASE_URL_VALUE, SUPABASE_SERVICE_ROLE_KEY_VALUE, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-const ENABLE_VERIFY_TIMING_LOGS = process.env.VERIFY_TIMING_LOGS !== "0";
+  const specs: EnvResolutionSpec[] = [
+    { primaryName: "DISCORD_PUBLIC_KEY", fallbackName: "PUBLIC_KEY" },
+    { primaryName: "SUPABASE_URL" },
+    { primaryName: "SUPABASE_SERVICE_ROLE_KEY", fallbackName: "SUPABASE_KEY" },
+  ];
+
+  const resolved: Record<string, string> = {};
+  const missingVars: string[] = [];
+
+  for (const spec of specs) {
+    const value = resolveEnvValue(spec);
+    if (value) {
+      resolved[spec.primaryName] = value;
+      continue;
+    }
+
+    missingVars.push(
+      spec.fallbackName
+        ? `${spec.primaryName} (or legacy fallback ${spec.fallbackName})`
+        : spec.primaryName
+    );
+  }
+
+  if (missingVars.length > 0) {
+    throw new MissingEnvError(missingVars);
+  }
+
+  runtimeConfigCache = {
+    discordPublicKeyHex: resolved.DISCORD_PUBLIC_KEY,
+    supabase: createClient(resolved.SUPABASE_URL, resolved.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    }),
+  };
+  return runtimeConfigCache;
+}
 
 type DiscordUser = {
   id: string;
@@ -99,11 +150,11 @@ async function readRawBody(req: NextApiRequest): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function verifyDiscordRequest(rawBody: Buffer, signature: string, timestamp: string): boolean {
+function verifyDiscordRequest(rawBody: Buffer, signature: string, timestamp: string, publicKeyHex: string): boolean {
   try {
     const message = Buffer.concat([Buffer.from(timestamp, "utf8"), rawBody]);
     const signatureBytes = Buffer.from(signature, "hex");
-    const publicKeyBytes = Buffer.from(DISCORD_PUBLIC_KEY_HEX, "hex");
+    const publicKeyBytes = Buffer.from(publicKeyHex, "hex");
     return nacl.sign.detached.verify(message, signatureBytes, publicKeyBytes);
   } catch {
     return false;
@@ -140,6 +191,7 @@ const REGISTRATION_SELECT =
   "email, first_name, last_name, discord_user_id, fields_of_study, interests, level_of_study, school, school_other, team_mode, team_name";
 
 async function findByDiscordUserId(discordUserId: string): Promise<Registration | null> {
+  const supabase = getRuntimeConfig().supabase;
   const { data, error } = await supabase
     .from("registrations")
     .select(REGISTRATION_SELECT)
@@ -154,6 +206,7 @@ async function findByDiscordUserId(discordUserId: string): Promise<Registration 
 }
 
 async function findByEmailCaseInsensitive(normalizedEmail: string): Promise<Registration | null> {
+  const supabase = getRuntimeConfig().supabase;
   const escapedEmail = escapePostgresLike(normalizedEmail);
   const { data, error } = await supabase
     .from("registrations")
@@ -181,6 +234,7 @@ type VerifyResult =
   | { ok: false; message: string };
 
 async function verifyRegistration(discordUser: DiscordUser, interaction: Interaction): Promise<VerifyResult> {
+  const supabase = getRuntimeConfig().supabase;
   const providedEmail = getEmailOption(interaction);
 
   if (!providedEmail) {
@@ -347,6 +401,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  let runtimeConfig: RuntimeConfig;
+  try {
+    runtimeConfig = getRuntimeConfig();
+  } catch (error) {
+    if (error instanceof MissingEnvError) {
+      console.error(`[config] Missing required env vars: ${error.missingVars.join(", ")}`);
+      res.status(500).json({
+        error: "Server misconfiguration: missing required environment variables.",
+      });
+      return;
+    }
+    console.error("[config] Failed to initialize runtime configuration", error);
+    res.status(500).json({ error: "Server misconfiguration." });
+    return;
+  }
+
   const signature = req.headers["x-signature-ed25519"];
   const timestamp = req.headers["x-signature-timestamp"];
 
@@ -356,7 +426,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const rawBody = await readRawBody(req);
-  if (!verifyDiscordRequest(rawBody, signature, timestamp)) {
+  if (!verifyDiscordRequest(rawBody, signature, timestamp, runtimeConfig.discordPublicKeyHex)) {
     res.status(401).send("Invalid signature");
     return;
   }
