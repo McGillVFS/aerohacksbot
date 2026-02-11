@@ -1,6 +1,6 @@
 # Discord Interactions Setup
 
-## 1) Register `/verify` command with required `email`
+## 1) Register slash commands
 
 Use Discord's commands API. For fast testing, register guild-scoped commands first.
 
@@ -22,6 +22,29 @@ Request body:
         "required": true
       }
     ]
+  },
+  {
+    "name": "status",
+    "description": "Check your verification status.",
+    "type": 1
+  },
+  {
+    "name": "find_teammates",
+    "description": "Find potential teammates looking for a team.",
+    "type": 1,
+    "options": [
+      {
+        "type": 3,
+        "name": "interest",
+        "description": "Optional keyword to filter teammate matches.",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "help",
+    "description": "Show bot command help.",
+    "type": 1
   }
 ]
 ```
@@ -36,7 +59,7 @@ This repo includes a script that registers the command directly to a guild:
 
 1. Set env vars in `.env.local`, `.env`, or your shell:
    - `DISCORD_APP_ID`
-   - `DISCORD_TOKEN`
+   - `DISCORD_TOKEN` (legacy fallback `DISCORD_BOT_TOKEN` is also accepted)
    - optional `DISCORD_GUILD_ID` (defaults to `1440784109034274838`)
 2. Run:
    `npm run register:guild`
@@ -63,5 +86,8 @@ Set these in Vercel Project Settings -> Environment Variables:
 - `DISCORD_PUBLIC_KEY`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `DISCORD_APP_ID`
+- `DISCORD_TOKEN`
+- optional `DISCORD_GUILD_ID`
 
 `SUPABASE_SERVICE_ROLE_KEY` must remain server-only and must never be exposed in client bundles.

@@ -6,11 +6,11 @@ loadEnvConfig(process.cwd());
 
 const DEFAULT_DISCORD_GUILD_ID = "1440784109034274838";
 const DISCORD_APP_ID = process.env.DISCORD_APP_ID;
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN ?? process.env.DISCORD_BOT_TOKEN;
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID ?? DEFAULT_DISCORD_GUILD_ID;
 
 if (!DISCORD_APP_ID || !DISCORD_TOKEN) {
-  console.error("Missing required env vars: DISCORD_APP_ID and DISCORD_TOKEN");
+  console.error("Missing required env vars: DISCORD_APP_ID and DISCORD_TOKEN (or DISCORD_BOT_TOKEN)");
   process.exit(1);
 }
 
@@ -27,6 +27,29 @@ const commands = [
         required: true,
       },
     ],
+  },
+  {
+    name: "status",
+    description: "Check your verification status.",
+    type: 1,
+  },
+  {
+    name: "find_teammates",
+    description: "Find potential teammates looking for a team.",
+    type: 1,
+    options: [
+      {
+        type: 3,
+        name: "interest",
+        description: "Optional keyword to filter teammate matches.",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "help",
+    description: "Show bot command help.",
+    type: 1,
   },
 ];
 

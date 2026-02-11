@@ -2,6 +2,13 @@
 
 Serverless Discord Interactions bot built with Next.js Pages API routes for Vercel.
 
+## Commands
+
+- `/verify email:<email>`
+- `/status`
+- `/find_teammates [interest]`
+- `/help`
+
 ## Endpoint
 
 - `POST /api/discord/interactions`
@@ -21,12 +28,12 @@ Serverless Discord Interactions bot built with Next.js Pages API routes for Verc
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (or legacy `SUPABASE_KEY`)
 - `DISCORD_APP_ID` (for command registration script)
-- `DISCORD_TOKEN` (for command registration script and role assignment)
+- `DISCORD_TOKEN` (for command registration script and role assignment; legacy fallback `DISCORD_BOT_TOKEN` also supported)
 - `DISCORD_GUILD_ID` (optional; defaults to `1440784109034274838` for `npm run register:guild`)
 
 ## Troubleshooting
 
-- If `npm run register:guild` reports missing variables, confirm `.env.local` or `.env` contains `DISCORD_APP_ID` and `DISCORD_TOKEN`.
+- If `npm run register:guild` reports missing variables, confirm `.env.local` or `.env` contains `DISCORD_APP_ID` and `DISCORD_TOKEN` (or `DISCORD_BOT_TOKEN`).
 - If `/api/discord/interactions` returns HTTP 500, check server logs for missing required environment variable names and set them before retrying.
 
 ## Database migration

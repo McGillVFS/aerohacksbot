@@ -46,7 +46,7 @@ const MAX_ROLE_OPERATIONS = Number(process.env.MAX_ROLE_OPERATIONS ?? "24");
 const ENABLE_VERIFY_TIMING_LOGS = process.env.VERIFY_TIMING_LOGS !== "0";
 const DISCORD_BOT_USER_ID = process.env.DISCORD_BOT_USER_ID;
 
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN ?? process.env.DISCORD_BOT_TOKEN;
 
 const discordBotToken = DISCORD_TOKEN;
 let cachedBotUserId: string | null = null;
@@ -75,7 +75,7 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
 
 async function discordApi<T>(path: string, init?: RequestInit): Promise<T> {
   if (!discordBotToken) {
-    throw new Error("Missing required env var: DISCORD_TOKEN");
+    throw new Error("Missing required env var: DISCORD_TOKEN (or DISCORD_BOT_TOKEN)");
   }
 
   const response = await fetchWithTimeout(`${DISCORD_API_BASE}${path}`, {

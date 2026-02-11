@@ -3,6 +3,9 @@
 ## Current command behavior
 
 - `/verify` requires `email`.
+- `/status` returns current verification details.
+- `/find_teammates [interest]` returns ranked teammates for verified users.
+- `/help` returns command guidance.
 - Command registration script (`npm run register:guild`) auto-loads `.env.local`/`.env`.
 - `DISCORD_GUILD_ID` is optional for registration and defaults to `1440784109034274838`.
 
@@ -12,7 +15,7 @@
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (or legacy `SUPABASE_KEY`)
 - `DISCORD_APP_ID`
-- `DISCORD_TOKEN`
+- `DISCORD_TOKEN` (or legacy `DISCORD_BOT_TOKEN`)
 - `DISCORD_GUILD_ID` (optional)
 
 ## Remaining manual verification steps
