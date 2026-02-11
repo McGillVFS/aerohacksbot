@@ -14,7 +14,6 @@ const MAX_TEAMMATE_RESULTS = Number(process.env.MAX_TEAMMATE_RESULTS ?? "10");
 const TEAMMATE_QUERY_LIMIT = Number(process.env.TEAMMATE_QUERY_LIMIT ?? "200");
 
 type RuntimeConfig = {
-  discordPublicKeyHex: string;
   supabase: SupabaseClient;
 };
 
@@ -34,6 +33,7 @@ class MissingEnvError extends Error {
 }
 
 let runtimeConfigCache: RuntimeConfig | null = null;
+let discordPublicKeyCache: string | null = null;
 
 function readEnv(name: string): string | undefined {
   const value = process.env[name];
@@ -57,13 +57,30 @@ function resolveEnvValue(spec: EnvResolutionSpec): string | null {
   return null;
 }
 
+function getDiscordPublicKeyHex(): string {
+  if (discordPublicKeyCache) {
+    return discordPublicKeyCache;
+  }
+
+  const value = resolveEnvValue({
+    primaryName: "DISCORD_PUBLIC_KEY",
+    fallbackName: "PUBLIC_KEY",
+  });
+
+  if (!value) {
+    throw new MissingEnvError(["DISCORD_PUBLIC_KEY (or legacy fallback PUBLIC_KEY)"]);
+  }
+
+  discordPublicKeyCache = value;
+  return discordPublicKeyCache;
+}
+
 function getRuntimeConfig(): RuntimeConfig {
   if (runtimeConfigCache) {
     return runtimeConfigCache;
   }
 
   const specs: EnvResolutionSpec[] = [
-    { primaryName: "DISCORD_PUBLIC_KEY", fallbackName: "PUBLIC_KEY" },
     { primaryName: "SUPABASE_URL" },
     { primaryName: "SUPABASE_SERVICE_ROLE_KEY", fallbackName: "SUPABASE_KEY" },
   ];
@@ -90,7 +107,6 @@ function getRuntimeConfig(): RuntimeConfig {
   }
 
   runtimeConfigCache = {
-    discordPublicKeyHex: resolved.DISCORD_PUBLIC_KEY,
     supabase: createClient(resolved.SUPABASE_URL, resolved.SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     }),
@@ -702,8 +718,8 @@ async function processFindTeammatesInteraction(interaction: Interaction): Promis
   }
 }
 
-async function processHelpInteraction(interaction: Interaction): Promise<void> {
-  const message = [
+function buildHelpMessage(): string {
+  return [
     "🤖 AeroHacks Bot Commands",
     "",
     "/verify email:<your registration email> - Verify and link your Discord account.",
@@ -713,8 +729,14 @@ async function processHelpInteraction(interaction: Interaction): Promise<void> {
     "",
     "If verification fails, contact staff with your registration email.",
   ].join("\n");
+}
 
-  await editInteractionResponse(interaction, message);
+async function processHelpInteraction(interaction: Interaction): Promise<void> {
+  try {
+    await editInteractionResponse(interaction, buildHelpMessage());
+  } catch (error) {
+    console.error("help command error", error);
+  }
 }
 
 async function processCommandInteraction(interaction: Interaction): Promise<void> {
@@ -743,15 +765,23 @@ async function processCommandInteraction(interaction: Interaction): Promise<void
   await editInteractionResponse(interaction, "Unsupported command.");
 }
 
+function commandRequiresSupabase(commandName: string | undefined): boolean {
+  return commandName === "verify" || commandName === "status" || commandName === "find_teammates";
+}
+
+function isKnownCommand(commandName: string | undefined): boolean {
+  return commandName === "verify" || commandName === "status" || commandName === "find_teammates" || commandName === "help";
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method Not Allowed" });
     return;
   }
 
-  let runtimeConfig: RuntimeConfig;
+  let discordPublicKeyHex: string;
   try {
-    runtimeConfig = getRuntimeConfig();
+    discordPublicKeyHex = getDiscordPublicKeyHex();
   } catch (error) {
     if (error instanceof MissingEnvError) {
       console.error(`[config] Missing required env vars: ${error.missingVars.join(", ")}`);
@@ -769,12 +799,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const timestamp = req.headers["x-signature-timestamp"];
 
   if (typeof signature !== "string" || typeof timestamp !== "string") {
+    console.warn("[signature] Missing Discord signature headers.");
     res.status(401).send("Invalid signature");
     return;
   }
 
   const rawBody = await readRawBody(req);
-  if (!verifyDiscordRequest(rawBody, signature, timestamp, runtimeConfig.discordPublicKeyHex)) {
+  if (!verifyDiscordRequest(rawBody, signature, timestamp, discordPublicKeyHex)) {
+    console.warn("[signature] Discord signature verification failed.");
     res.status(401).send("Invalid signature");
     return;
   }
@@ -797,6 +829,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  const commandName = interaction.data?.name;
+  console.info(`[interaction] command=${commandName ?? "unknown"} interaction_id=${interaction.id}`);
+
+  if (commandName === "help") {
+    res.status(200).json(interactionResponse(buildHelpMessage()));
+    return;
+  }
+
+  if (!isKnownCommand(commandName)) {
+    res.status(200).json(interactionResponse("Unsupported command."));
+    return;
+  }
+
+  if (commandRequiresSupabase(commandName)) {
+    try {
+      getRuntimeConfig();
+    } catch (error) {
+      if (error instanceof MissingEnvError) {
+        console.error(`[config] Missing required env vars: ${error.missingVars.join(", ")}`);
+        res.status(200).json(
+          interactionResponse("Server misconfiguration: missing required environment variables. Contact staff.")
+        );
+        return;
+      }
+
+      console.error("[config] Failed to initialize runtime configuration", error);
+      res.status(200).json(interactionResponse("Server misconfiguration. Please contact staff."));
+      return;
+    }
+  }
+
   res.status(200).json(interactionDeferredResponse());
-  await processCommandInteraction(interaction);
+  void processCommandInteraction(interaction).catch((error) => {
+    console.error(`[interaction] command processing failed: ${commandName ?? "unknown"}`, error);
+  });
 }
