@@ -9,6 +9,19 @@ Discord interactions bot built with Next.js Pages API routes, configured for Ren
 - `/find_teammates [interest]`
 - `/help`
 
+## Admin scripts
+
+- `npm run register:guild [-- --reason "<why>"]`
+- `npm run post:rules [-- --reason "<why>"] [-- --dry-run]`
+- `npm run rename:channels [-- --reason "<why>"] [-- --dry-run]`
+
+These scripts automatically write an audit entry to `#mod-log` with:
+
+- action name
+- why the action was taken
+- a summary of what changed
+- success/failure status
+
 ## Endpoint
 
 - `POST /api/discord/interactions`

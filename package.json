@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "register:guild": "node scripts/register-guild-command.mjs"
+    "register:guild": "node scripts/register-guild-command.mjs",
+    "post:rules": "node scripts/post-rules-embed.mjs",
+    "rename:channels": "node scripts/rename-channels-with-emojis.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.3",
