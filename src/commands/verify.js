@@ -46,8 +46,8 @@ module.exports = {
 
       const rolesToAdd = [];
 
-      const verifiedRole = await getOrCreateRole(guild, 'Verified Hacker', '#5865F2');
-      if (verifiedRole) rolesToAdd.push(verifiedRole);
+      const attendeeRole = await getOrCreateRole(guild, 'Attendee');
+      if (attendeeRole) rolesToAdd.push(attendeeRole);
 
       if (registration.school) {
         const schoolRole = await getOrCreateRole(guild, registration.school);
