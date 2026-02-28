@@ -18,10 +18,9 @@ module.exports = {
     const providedEmail = interaction.options.getString('email');
 
     try {
-      // Step A: Automatic Identity Check
+      // --- Step A & B: Identity Check & Linking ---
       let registration = await findRegistrationByDiscordId(discordUserId);
 
-      // Step B: Email Claim (If ID check fails)
       if (!registration) {
         if (!providedEmail) {
           return interaction.editReply('Please provide your email to verify: `/verify email:your@email.com`');
@@ -34,32 +33,35 @@ module.exports = {
         }
 
         if (registration.discord_user_id) {
-            return interaction.editReply('This email is already linked to another Discord account.');
+          return interaction.editReply('This email is already linked to another Discord account.');
         }
 
         registration = await linkDiscordId(providedEmail, discordUserId);
       }
 
-      // Step C: Dynamic Role Assignment
+      // --- Step C: Dynamic Role Assignment ---
       const member = interaction.member;
       const guild = interaction.guild;
-
       const rolesToAdd = [];
 
+      // Attendee Role
       const attendeeRole = await getOrCreateRole(guild, 'Attendee');
       if (attendeeRole) rolesToAdd.push(attendeeRole);
 
+      // School Role
       if (registration.school) {
         const schoolRole = await getOrCreateRole(guild, registration.school);
         if (schoolRole) rolesToAdd.push(schoolRole);
       }
 
+      // Team Role
       if (registration.team_mode === 'team' && registration.team_name) {
         const teamRole = await getOrCreateRole(guild, `Team: ${registration.team_name}`);
         if (teamRole) rolesToAdd.push(teamRole);
       }
 
-      if (registration.interests && registration.interests.length > 0) {
+      // Interest Roles
+      if (registration.interests && Array.isArray(registration.interests)) {
         for (const interest of registration.interests) {
           const interestRole = await getOrCreateRole(guild, `Interest: ${interest}`);
           if (interestRole) rolesToAdd.push(interestRole);
@@ -68,10 +70,26 @@ module.exports = {
 
       await member.roles.add(rolesToAdd);
 
-      await interaction.editReply('You have been successfully verified!');
+      // --- Step D: Welcome/DM Logic ---
+      const formLink = 'https://forms.gle/4vzvLBiXjXMVXp4XA';
+      const welcomeMessage = `🎉 **Welcome to the hackathon!**\n\nPlease take a moment to fill out this short onboarding form:\n${formLink}`;
+
+      try {
+        await interaction.user.send(welcomeMessage);
+        await interaction.editReply('You have been successfully verified! Check your DMs for a welcome message.');
+      } catch (dmError) {
+        console.warn('Unable to DM verified user:', dmError.message);
+        await interaction.editReply(`You have been successfully verified! I wasn’t able to send you a DM; please fill out the form here: ${formLink}`);
+      }
+
     } catch (error) {
       console.error('Verification failed:', error);
-      await interaction.editReply('An error occurred during verification. Please try again later.');
+      // Ensure we only reply if we haven't already replied/deferred
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply('An error occurred during verification. Please try again later.');
+      } else {
+        await interaction.reply({ content: 'An error occurred during verification.', ephemeral: true });
+      }
     }
   },
 };
