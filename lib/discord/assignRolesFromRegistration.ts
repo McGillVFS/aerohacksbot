@@ -45,6 +45,8 @@ const DISCORD_API_TIMEOUT_MS = Number(process.env.DISCORD_API_TIMEOUT_MS ?? "700
 const MAX_ROLE_OPERATIONS = Number(process.env.MAX_ROLE_OPERATIONS ?? "24");
 const ENABLE_VERIFY_TIMING_LOGS = process.env.VERIFY_TIMING_LOGS !== "0";
 const DISCORD_BOT_USER_ID = process.env.DISCORD_BOT_USER_ID;
+const DEFAULT_ATTENDEE_ROLE_NAME = "Attendee";
+const DISCORD_ATTENDEE_ROLE_ID = process.env.DISCORD_ATTENDEE_ROLE_ID ?? "1440784109034274839";
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN ?? process.env.DISCORD_BOT_TOKEN;
 
@@ -206,9 +208,33 @@ function getMemberTopRolePosition(memberRoleIds: string[], guildRolesById: Map<s
   return topPosition;
 }
 
+function resolveAttendeeRole(guildRolesById: Map<string, Role>, roleByLowerName: Map<string, Role>): Role | null {
+  if (DISCORD_ATTENDEE_ROLE_ID) {
+    const roleById = guildRolesById.get(DISCORD_ATTENDEE_ROLE_ID);
+    if (roleById) {
+      return roleById;
+    }
+    console.warn(`Configured attendee role id "${DISCORD_ATTENDEE_ROLE_ID}" was not found in this guild.`);
+  }
+
+  return roleByLowerName.get(DEFAULT_ATTENDEE_ROLE_NAME.toLowerCase()) ?? null;
+}
+
 export async function assignRolesFromRegistration(input: AssignRolesInput): Promise<AssignRolesResult> {
   const totalStart = performance.now();
   const desiredRoleNames = buildDesiredRoleNames(input.registration);
+
+  const listRolesStart = performance.now();
+  const guildRoles = await listGuildRoles(input.guildId);
+  logVerifyTiming("roles.listGuildRoles", performance.now() - listRolesStart, `guild_roles=${guildRoles.length}`);
+  const guildRolesById = new Map(guildRoles.map((role) => [role.id, role]));
+  const roleByLowerName = new Map(guildRoles.map((role) => [role.name.toLowerCase(), role]));
+
+  const attendeeRole = resolveAttendeeRole(guildRolesById, roleByLowerName);
+  if (attendeeRole && !desiredRoleNames.some((name) => name.toLowerCase() === attendeeRole.name.toLowerCase())) {
+    desiredRoleNames.unshift(attendeeRole.name);
+  }
+
   if (desiredRoleNames.length === 0) {
     logVerifyTiming("roles.total", performance.now() - totalStart, "desired_roles=0");
     return {
@@ -218,12 +244,6 @@ export async function assignRolesFromRegistration(input: AssignRolesInput): Prom
       failedRoleNames: [],
     };
   }
-
-  const listRolesStart = performance.now();
-  const guildRoles = await listGuildRoles(input.guildId);
-  logVerifyTiming("roles.listGuildRoles", performance.now() - listRolesStart, `guild_roles=${guildRoles.length}`);
-  const guildRolesById = new Map(guildRoles.map((role) => [role.id, role]));
-  const roleByLowerName = new Map(guildRoles.map((role) => [role.name.toLowerCase(), role]));
 
   const botUserStart = performance.now();
   const botUserId = await getBotUserId();
