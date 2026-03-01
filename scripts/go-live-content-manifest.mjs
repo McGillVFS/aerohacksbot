@@ -191,6 +191,7 @@ export function buildGoLiveSeeds(snapshot) {
             name: "Who can participate?",
             value: "Follow official eligibility criteria published on the event website and Devpost.",
           },
+          {
             name: "What are the event hours and can I stay overnight at the venue?",
             value: [
               "- Friday March 13: 5:30 PM - 7 PM",
