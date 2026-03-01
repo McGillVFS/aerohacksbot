@@ -12,6 +12,8 @@ export const config = {
 const ENABLE_VERIFY_TIMING_LOGS = process.env.VERIFY_TIMING_LOGS !== "0";
 const MAX_TEAMMATE_RESULTS = Number(process.env.MAX_TEAMMATE_RESULTS ?? "10");
 const TEAMMATE_QUERY_LIMIT = Number(process.env.TEAMMATE_QUERY_LIMIT ?? "200");
+const DISCORD_API_BASE = "https://discord.com/api/v10";
+const VERIFY_ONBOARDING_FORM_URL = "https://forms.gle/4vzvLBiXjXMVXp4XA";
 
 type RuntimeConfig = {
   supabase: SupabaseClient;
@@ -181,6 +183,66 @@ function interactionResponse(content: string) {
       flags: 64,
     },
   };
+}
+
+function getDiscordBotToken(): string | null {
+  return resolveEnvValue({
+    primaryName: "DISCORD_TOKEN",
+    fallbackName: "DISCORD_BOT_TOKEN",
+  });
+}
+
+function buildOnboardingFormDmMessage(): string {
+  return [
+    "🎉 **Welcome to the hackathon!**",
+    "",
+    "Please take a moment to fill out this short onboarding form:",
+    VERIFY_ONBOARDING_FORM_URL,
+  ].join("\n");
+}
+
+async function sendOnboardingFormDm(discordUserId: string): Promise<void> {
+  const discordBotToken = getDiscordBotToken();
+  if (!discordBotToken) {
+    throw new Error("Missing required env var for DM delivery: DISCORD_TOKEN (or DISCORD_BOT_TOKEN)");
+  }
+
+  const createDmResponse = await fetch(`${DISCORD_API_BASE}/users/@me/channels`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${discordBotToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      recipient_id: discordUserId,
+    }),
+  });
+
+  if (!createDmResponse.ok) {
+    const body = await createDmResponse.text();
+    throw new Error(`Failed to create DM channel (${createDmResponse.status}): ${body}`);
+  }
+
+  const dmChannel = (await createDmResponse.json()) as { id?: string };
+  if (!dmChannel.id) {
+    throw new Error("Failed to create DM channel: missing channel id in response.");
+  }
+
+  const sendMessageResponse = await fetch(`${DISCORD_API_BASE}/channels/${dmChannel.id}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${discordBotToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      content: buildOnboardingFormDmMessage(),
+    }),
+  });
+
+  if (!sendMessageResponse.ok) {
+    const body = await sendMessageResponse.text();
+    throw new Error(`Failed to send onboarding DM (${sendMessageResponse.status}): ${body}`);
+  }
 }
 
 async function readRawBody(req: NextApiRequest): Promise<Buffer> {
@@ -606,11 +668,23 @@ async function processVerifyInteraction(interaction: Interaction): Promise<void>
       logVerifyTiming("assignRolesFromRegistration", performance.now() - roleStart, `guild_id=${interaction.guild_id}`);
     }
 
+    const dmStart = performance.now();
+    let dmSent = false;
+    try {
+      await sendOnboardingFormDm(discordUser.id);
+      dmSent = true;
+    } catch (dmError) {
+      console.warn("Unable to DM verified user:", dmError);
+    }
+    logVerifyTiming("sendOnboardingFormDm", performance.now() - dmStart, `sent=${dmSent ? "1" : "0"}`);
+
+    const successMessage = buildVerificationSuccessMessage(verifyResult.registration, roleResult, interaction.guild_id);
+    const successWithFormPrompt = dmSent
+      ? `${successMessage}\n\nPlease check your DMs for the onboarding form link.`
+      : `${successMessage}\n\nI couldn't send you a DM, so please fill out the onboarding form here: ${VERIFY_ONBOARDING_FORM_URL}`;
+
     const editStart = performance.now();
-    await editInteractionResponse(
-      interaction,
-      buildVerificationSuccessMessage(verifyResult.registration, roleResult, interaction.guild_id)
-    );
+    await editInteractionResponse(interaction, successWithFormPrompt);
     logVerifyTiming("editOriginalInteractionResponse", performance.now() - editStart, "result=success_message");
     logVerifyTiming("processVerifyInteraction.total", performance.now() - totalStart, "result=success");
   } catch (error) {

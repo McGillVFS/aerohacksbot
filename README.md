@@ -4,7 +4,7 @@ Discord interactions bot built with Next.js Pages API routes, configured for Ren
 
 ## Commands
 
-- `/verify email:<email>`
+- `/verify email:<email>` (sends onboarding form link via DM; falls back to in-command link if DMs are closed)
 - `/status`
 - `/find_teammates [interest]`
 - `/help`
