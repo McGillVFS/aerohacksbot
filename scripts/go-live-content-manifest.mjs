@@ -233,6 +233,10 @@ export function buildGoLiveSeeds(snapshot) {
               "- `/help` in bot commands shows command reference.",
             ].join("\n"),
           },
+          {
+            name: "Complete the official RSVP form",
+            value: "⚠️ RSVPs are required to secure your participation.\nClick the link below or check your DMs—our bot will send you the form link.\nhttps://forms.gle/4vzvLBiXjXMVXp4XA",
+          },
         ],
         footerText: "Verification unlocks collaboration channels",
         seedKey: "go-live:getting-started:v1",
