@@ -29,8 +29,7 @@ const OFFICIAL_SOURCES = {
 };
 
 function addSeedFooter(footerText, seedKey) {
-  const base = footerText ? `${footerText} • ` : "";
-  return `${base}[seed:${seedKey}]`;
+  return footerText;
 }
 
 function extractTitle(html) {

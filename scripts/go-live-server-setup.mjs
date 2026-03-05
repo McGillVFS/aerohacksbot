@@ -1,4 +1,5 @@
 import nextEnv from "@next/env";
+import fs from "fs/promises";
 import { getActionReason, postModLog } from "./discord-action-logger.mjs";
 import {
   buildGoLiveSeeds,
@@ -12,6 +13,7 @@ import {
 const { loadEnvConfig } = nextEnv;
 loadEnvConfig(process.cwd());
 
+const SEED_MAPPING_FILE = ".go-live-seeds.json";
 const DEFAULT_DISCORD_GUILD_ID = "1440784109034274838";
 const DEFAULT_VERIFIED_ROLE_NAME = "Attendee";
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -45,6 +47,23 @@ function getArgValue(flag) {
     return null;
   }
   return value;
+}
+
+async function loadSeedMapping() {
+  try {
+    const data = await fs.readFile(SEED_MAPPING_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+async function saveSeedMapping(mapping) {
+  await fs.writeFile(SEED_MAPPING_FILE, JSON.stringify(mapping, null, 2));
+}
+
+function getSeedMappingKey(channelId, seedKey) {
+  return `${channelId}:${seedKey}`;
 }
 
 function permissionValue(bits) {
@@ -110,10 +129,6 @@ function findExistingSeedMessage(messages, { botUserId, seedKey, legacyTitleMatc
       continue;
     }
 
-    if (extractSeedKey(message) === seedKey) {
-      return message;
-    }
-
     if (legacyTitleMatch) {
       const firstTitle = message?.embeds?.[0]?.title;
       if (firstTitle && firstTitle === legacyTitleMatch) {
@@ -152,6 +167,7 @@ async function upsertEmbed({
   legacyTitleMatch = null,
   dryRun,
   messageCache,
+  seedMapping,
 }) {
   const payload = buildEmbedPayload(embed);
 
@@ -163,17 +179,36 @@ async function upsertEmbed({
     };
   }
 
-  if (!messageCache.has(channelId)) {
-    const messages = await discordApi(`/channels/${channelId}/messages?limit=100`);
-    messageCache.set(channelId, messages);
+  const mappingKey = getSeedMappingKey(channelId, seedKey);
+  let existing = null;
+
+  // First check if we have a cached message ID from the mapping
+  if (seedMapping[mappingKey]) {
+    try {
+      const cached = await discordApi(`/channels/${channelId}/messages/${seedMapping[mappingKey]}`);
+      if (cached?.author?.id === botUserId) {
+        existing = cached;
+      }
+    } catch {
+      // Message not found, will search or create new
+      delete seedMapping[mappingKey];
+    }
   }
 
-  const cachedMessages = messageCache.get(channelId) ?? [];
-  const existing = findExistingSeedMessage(cachedMessages, {
-    botUserId,
-    seedKey,
-    legacyTitleMatch,
-  });
+  // If not found in mapping, search in channel messages for legacy matching
+  if (!existing) {
+    if (!messageCache.has(channelId)) {
+      const messages = await discordApi(`/channels/${channelId}/messages?limit=100`);
+      messageCache.set(channelId, messages);
+    }
+
+    const cachedMessages = messageCache.get(channelId) ?? [];
+    existing = findExistingSeedMessage(cachedMessages, {
+      botUserId,
+      seedKey,
+      legacyTitleMatch,
+    });
+  }
 
   if (existing) {
     const updated = await discordApi(`/channels/${channelId}/messages/${existing.id}`, {
@@ -181,6 +216,7 @@ async function upsertEmbed({
       body: payload,
       expectedStatuses: [200],
     });
+    seedMapping[mappingKey] = updated.id;
     messageCache.delete(channelId);
     return {
       action: "updated",
@@ -194,6 +230,7 @@ async function upsertEmbed({
     body: payload,
     expectedStatuses: [200],
   });
+  seedMapping[mappingKey] = created.id;
   messageCache.delete(channelId);
   return {
     action: "created",
@@ -358,6 +395,7 @@ async function run() {
   const seeds = buildGoLiveSeeds(snapshot);
   const operationLog = [];
   const messageCache = new Map();
+  const seedMapping = await loadSeedMapping();
 
   const [channels, roles, botUserId] = await Promise.all([
     discordApi(`/guilds/${DISCORD_GUILD_ID}/channels`),
@@ -378,6 +416,7 @@ async function run() {
         botUserId,
         dryRun: DRY_RUN,
         messageCache,
+        seedMapping,
       });
       operationLog.push({
         ...upsertResult,
@@ -391,7 +430,7 @@ async function run() {
     const pinResults = [];
 
     for (const seed of seeds) {
-      const seedKey = seed.embed.footer.text.match(/\[seed:([^\]]+)\]/)?.[1];
+      const seedKey = `go-live:${seed.key}:v1`;
       if (!seedKey) {
         throw new Error(`Embed for ${seed.key} missing deterministic seed key.`);
       }
@@ -404,6 +443,7 @@ async function run() {
         dryRun: DRY_RUN,
         legacyTitleMatch: seed.legacyTitleMatch ?? null,
         messageCache,
+        seedMapping,
       });
       publishResults.push(upsertResult);
       operationLog.push(upsertResult);
@@ -444,6 +484,7 @@ async function run() {
   const detailLines = operationLog.map(formatOperation).slice(0, 30);
 
   if (!DRY_RUN) {
+    await saveSeedMapping(seedMapping);
     await postModLog({
       token: DISCORD_TOKEN,
       action: actionName,
